@@ -68,7 +68,6 @@ public class COSC322Test extends GamePlayer {
             shouldMove = handleMoveMessage(msgDetails);
         } else if (GameMessage.GAME_STATE_PLAYER_LOST.equals(messageType)) {
             gameActive = false;
-            
             log("Game over notification received: %s", msgDetails);
         } else if (GameMessage.GAME_TEXT_MESSAGE.equals(messageType)) {
             log("Text message: %s", msgDetails);
@@ -132,7 +131,6 @@ public class COSC322Test extends GamePlayer {
         whitePlayerName = stringValue(msgDetails.get(AmazonsGameMessage.PLAYER_WHITE));
         mySide = resolveMySide();
         gameActive = true;
-        
 
         ArrayList<Integer> encodedState = coerceIntegerList(msgDetails.get(AmazonsGameMessage.GAME_STATE));
         if (encodedState != null) {
@@ -151,7 +149,7 @@ public class COSC322Test extends GamePlayer {
 
     private boolean handleMoveMessage(Map<String, Object> msgDetails) {
         AmazonsMove move = AmazonsMove.fromMessage(msgDetails);
-        int mover = resolveMover(move);
+        int mover = sideToMove;
 
         if (currentState != null && mover != AmazonsBoardState.NONE) {
             currentState.applyMove(move, mover);
@@ -178,7 +176,6 @@ public class COSC322Test extends GamePlayer {
 
         if (result.getMove() == null) {
             gameActive = false;
-            
             log("No legal move available on trigger %s. score=%d", trigger, result.getScore());
             return;
         }
@@ -222,10 +219,6 @@ public class COSC322Test extends GamePlayer {
             return AmazonsBoardState.WHITE;
         }
         return AmazonsBoardState.NONE;
-    }
-
-    private int resolveMover(AmazonsMove move) {
-        return sideToMove;
     }
 
     private void refreshRoomInformation() {

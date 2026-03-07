@@ -14,6 +14,7 @@ public class AlphaBetaSearch {
     private static final int DEPTH_ONE_ROOT_MOVE_LIMIT = 192;
     private static final int ROOT_MOVE_LIMIT = 96;
     private static final int CHILD_MOVE_LIMIT = 24;
+    private static final int CHILD_PREFILTER_LIMIT = 64;
     private final long softLimitMillis;
     private final int maxDepth;
 
@@ -77,10 +78,11 @@ public class AlphaBetaSearch {
         AmazonsMove preferredMove = null;
 
         for (int depth = 1; depth <= maxDepth; depth++) {
-            if (System.currentTimeMillis() >= deadlineMillis) {
+            if (depth > 1 && System.currentTimeMillis() >= deadlineMillis) {
                 break;
             }
 
+            long workerDeadline = depth == 1 ? Long.MAX_VALUE : deadlineMillis;
             List<AmazonsMove> orderedMoves = orderRootMoves(board, sideToMove, preferredMove, depth);
             boolean timedOut = false;
 
@@ -90,7 +92,7 @@ public class AlphaBetaSearch {
 
             for (AmazonsMove move : orderedMoves) {
                 board.applyMove(move, sideToMove);
-                SearchWorker worker = new SearchWorker(board, deadlineMillis);
+                SearchWorker worker = new SearchWorker(board, workerDeadline);
                 int score = -worker.negamax(
                     AmazonsBoardState.opponent(sideToMove), depth - 1,
                     NEG_INF, POS_INF, 1
@@ -138,9 +140,10 @@ public class AlphaBetaSearch {
 
         Collections.sort(scoredMoves, Comparator.comparingInt(ScoredMove::getScore).reversed());
 
+        int rootLimit = moves.size() > 1000 ? ROOT_MOVE_LIMIT / 2 : ROOT_MOVE_LIMIT;
         int limit = depthRemaining <= 1
             ? Math.min(scoredMoves.size(), DEPTH_ONE_ROOT_MOVE_LIMIT)
-            : Math.min(scoredMoves.size(), ROOT_MOVE_LIMIT);
+            : Math.min(scoredMoves.size(), rootLimit);
 
         List<AmazonsMove> ordered = new ArrayList<AmazonsMove>(limit);
         for (int i = 0; i < limit; i++) {
@@ -225,14 +228,19 @@ public class AlphaBetaSearch {
                 return moves;
             }
 
-            List<ScoredMove> scoredMoves = new ArrayList<ScoredMove>(moves.size());
-            int evaluated = 0;
+            List<ScoredMove> prefilter = new ArrayList<ScoredMove>(moves.size());
             for (AmazonsMove move : moves) {
-                if (evaluated++ % 50 == 0 && isExpired()) {
-                    break;
-                }
+                int score = 6 * centerBias(move) + 2 * centerBias(move.getArrowRow(), move.getArrowCol());
+                prefilter.add(new ScoredMove(move, score));
+            }
+            Collections.sort(prefilter, Comparator.comparingInt(ScoredMove::getScore).reversed());
+            int candidateCount = Math.min(prefilter.size(), CHILD_PREFILTER_LIMIT);
+
+            List<ScoredMove> scored = new ArrayList<ScoredMove>(candidateCount);
+            int opponent = AmazonsBoardState.opponent(player);
+            for (int i = 0; i < candidateCount; i++) {
+                AmazonsMove move = prefilter.get(i).move;
                 board.applyMove(move, player);
-                int opponent = AmazonsBoardState.opponent(player);
                 int score = 6 * centerBias(move) + 2 * centerBias(move.getArrowRow(), move.getArrowCol());
                 if (!board.hasAnyMoves(opponent)) {
                     score += 1_000_000;
@@ -240,15 +248,14 @@ public class AlphaBetaSearch {
                 score += 6 * board.countDestinationsFrom(move.getToRow(), move.getToCol());
                 score += 20 * (board.countActiveQueens(player) - board.countActiveQueens(opponent));
                 board.undoMove(move, player);
-                scoredMoves.add(new ScoredMove(move, score));
+                scored.add(new ScoredMove(move, score));
             }
 
-            Collections.sort(scoredMoves, Comparator.comparingInt(ScoredMove::getScore).reversed());
-
-            int moveLimit = Math.min(scoredMoves.size(), CHILD_MOVE_LIMIT);
+            Collections.sort(scored, Comparator.comparingInt(ScoredMove::getScore).reversed());
+            int moveLimit = Math.min(scored.size(), CHILD_MOVE_LIMIT);
             List<AmazonsMove> ordered = new ArrayList<AmazonsMove>(moveLimit);
             for (int i = 0; i < moveLimit; i++) {
-                ordered.add(scoredMoves.get(i).move);
+                ordered.add(scored.get(i).move);
             }
             return ordered;
         }

@@ -11,8 +11,8 @@ public class AmazonsBoardState {
     public static final int MAX_INDEX = 10;
 
     public static final int EMPTY = 0;
-    public static final int BLACK = 1;
-    public static final int WHITE = 2;
+    public static final int WHITE = 1;
+    public static final int BLACK = 2;
     public static final int ARROW = 3;
     public static final int NONE = 0;
 
@@ -155,6 +155,7 @@ public class AmazonsBoardState {
         int contestedScore = 0;
         int myReachable = 0;
         int opponentReachable = 0;
+        boolean separated = true;
 
         for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
             for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
@@ -179,6 +180,7 @@ public class AmazonsBoardState {
                 } else if (!myFinite && opponentFinite) {
                     territoryScore--;
                 } else if (myFinite && opponentFinite) {
+                    separated = false;
                     if (myDistance < opponentDistance) {
                         territoryScore++;
                     } else if (opponentDistance < myDistance) {
@@ -190,17 +192,40 @@ public class AmazonsBoardState {
             }
         }
 
+        if (separated) {
+            int myMoves = countFillMoves(myQueens, myDistances);
+            int opponentMoves = countFillMoves(opponentQueens, opponentDistances);
+            return (myMoves - opponentMoves) * 500;
+        }
+
         int mobilityScore = countQueenDestinations(myQueens) - countQueenDestinations(opponentQueens);
         int activeQueenScore = countActiveQueens(myQueens) - countActiveQueens(opponentQueens);
         int reachabilityScore = myReachable - opponentReachable;
         int trapScore = countTrappedQueens(opponentQueens) - countTrappedQueens(myQueens);
 
-        return territoryScore * 100
-            + mobilityScore * 4
+        int arrows = countArrows();
+        int phase = Math.min(arrows, 40);
+        int territoryWeight = 60 + phase * 3;
+        int mobilityWeight = 12 - phase / 5;
+
+        return territoryScore * territoryWeight
+            + mobilityScore * mobilityWeight
             + activeQueenScore * 15
             + contestedScore * 2
             + reachabilityScore
             + trapScore * 120;
+    }
+
+    private int countFillMoves(List<int[]> queens, int[][] distances) {
+        int moves = 0;
+        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
+            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
+                if (board[row][col] == EMPTY && distances[row][col] < INF) {
+                    moves++;
+                }
+            }
+        }
+        return moves;
     }
 
     private int contestedPressure(int row, int col, List<int[]> myQueens, List<int[]> opponentQueens) {
