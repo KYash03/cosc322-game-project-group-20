@@ -133,13 +133,11 @@ public class COSC322Test extends GamePlayer {
         ArrayList<Integer> encodedState = coerceIntegerList(msgDetails.get(AmazonsGameMessage.GAME_STATE));
         if (encodedState != null) {
             currentState = AmazonsBoardState.fromServerState(encodedState);
-            sideToMove = currentState.inferSideToMove();
             if (gamegui != null) {
                 gamegui.setGameState(encodedState);
             }
-        } else if (sideToMove == AmazonsBoardState.NONE) {
-            sideToMove = AmazonsBoardState.BLACK;
         }
+        sideToMove = AmazonsBoardState.BLACK;
 
         log("Game start. black=%s white=%s mySide=%d turn=%d", blackPlayerName, whitePlayerName, mySide, sideToMove);
         return shouldAutoPlay();
