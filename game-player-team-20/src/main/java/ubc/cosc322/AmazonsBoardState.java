@@ -16,7 +16,7 @@ public class AmazonsBoardState {
     public static final int NONE = 0;
 
     public static int opponent(int color) {
-        return color == BLACK ? WHITE : BLACK;
+        return color == WHITE ? WHITE : BLACK;
     }
 
     private static final int INF = 1_000_000;
