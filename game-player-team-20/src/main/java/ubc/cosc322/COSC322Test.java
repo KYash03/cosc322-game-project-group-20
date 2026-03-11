@@ -32,13 +32,11 @@ public class COSC322Test extends GamePlayer {
             return;
         }
 
-        final COSC322Test player = new COSC322Test(args[0], args[1]);
-
         BaseGameGUI.sys_setup();
         EventQueue.invokeLater(new Runnable() {
             @Override
             public void run() {
-                player.Go();
+                new COSC322Test(args[0], args[1]).Go();
             }
         });
     }

@@ -1,6 +1,5 @@
 package ubc.cosc322;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -29,6 +28,18 @@ public class AmazonsBoardState {
 
     private final int[][] board;
 
+    // Cached queen positions — always exactly 4 per side in Amazons
+    private final int[] wQueenRows = new int[4];
+    private final int[] wQueenCols = new int[4];
+    private final int[] bQueenRows = new int[4];
+    private final int[] bQueenCols = new int[4];
+    private int arrowCount;
+
+    // Static scratch buffers — search is single-threaded so safe to share
+    private static final int[][] SCRATCH_DIST_A = new int[BOARD_DIMENSION][BOARD_DIMENSION];
+    private static final int[][] SCRATCH_DIST_B = new int[BOARD_DIMENSION][BOARD_DIMENSION];
+    private static final int[] BFS_QUEUE = new int[BOARD_DIMENSION * BOARD_DIMENSION];
+
     public AmazonsBoardState() {
         this.board = new int[BOARD_DIMENSION][BOARD_DIMENSION];
     }
@@ -39,9 +50,20 @@ public class AmazonsBoardState {
         }
 
         AmazonsBoardState state = new AmazonsBoardState();
+        int wi = 0, bi = 0;
         for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
             for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
-                state.board[row][col] = encodedState.get(BOARD_DIMENSION * row + col).intValue();
+                int cell = encodedState.get(BOARD_DIMENSION * row + col).intValue();
+                state.board[row][col] = cell;
+                if (cell == WHITE) {
+                    state.wQueenRows[wi] = row;
+                    state.wQueenCols[wi++] = col;
+                } else if (cell == BLACK) {
+                    state.bQueenRows[bi] = row;
+                    state.bQueenCols[bi++] = col;
+                } else if (cell == ARROW) {
+                    state.arrowCount++;
+                }
             }
         }
         return state;
@@ -52,6 +74,11 @@ public class AmazonsBoardState {
         for (int row = 0; row < BOARD_DIMENSION; row++) {
             System.arraycopy(board[row], 0, copy.board[row], 0, BOARD_DIMENSION);
         }
+        System.arraycopy(wQueenRows, 0, copy.wQueenRows, 0, 4);
+        System.arraycopy(wQueenCols, 0, copy.wQueenCols, 0, 4);
+        System.arraycopy(bQueenRows, 0, copy.bQueenRows, 0, 4);
+        System.arraycopy(bQueenCols, 0, copy.bQueenCols, 0, 4);
+        copy.arrowCount = this.arrowCount;
         return copy;
     }
 
@@ -75,24 +102,18 @@ public class AmazonsBoardState {
     }
 
     public int inferSideToMove() {
-        return countArrows() % 2 == 0 ? BLACK : WHITE;
+        return arrowCount % 2 == 0 ? BLACK : WHITE;
     }
 
     public int countArrows() {
-        int arrows = 0;
-        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
-            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
-                if (board[row][col] == ARROW) {
-                    arrows++;
-                }
-            }
-        }
-        return arrows;
+        return arrowCount;
     }
 
     public boolean hasAnyMoves(int player) {
-        for (int[] queen : getQueenPositions(player)) {
-            if (queenHasDestination(queen[0], queen[1])) {
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
+        for (int i = 0; i < 4; i++) {
+            if (queenHasDestination(rows[i], cols[i])) {
                 return true;
             }
         }
@@ -101,44 +122,90 @@ public class AmazonsBoardState {
 
     public List<AmazonsMove> generateMoves(int player) {
         ArrayList<AmazonsMove> moves = new ArrayList<AmazonsMove>();
-        for (int[] queen : getQueenPositions(player)) {
-            addMovesForQueen(player, queen[0], queen[1], moves);
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
+        for (int i = 0; i < 4; i++) {
+            addMovesForQueen(player, rows[i], cols[i], moves);
         }
         return moves;
     }
 
     public void applyMove(AmazonsMove move, int player) {
-        if (board[move.getFromRow()][move.getFromCol()] != player) {
+        int fromRow = move.getFromRow(), fromCol = move.getFromCol();
+        int toRow   = move.getToRow(),   toCol   = move.getToCol();
+        int arrRow  = move.getArrowRow(), arrCol  = move.getArrowCol();
+
+        if (board[fromRow][fromCol] != player) {
             throw new IllegalArgumentException("Source square does not contain the expected piece");
         }
-        board[move.getFromRow()][move.getFromCol()] = EMPTY;
-        board[move.getToRow()][move.getToCol()] = player;
-        board[move.getArrowRow()][move.getArrowCol()] = ARROW;
+        board[fromRow][fromCol] = EMPTY;
+        board[toRow][toCol]     = player;
+        board[arrRow][arrCol]   = ARROW;
+        arrowCount++;
+
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
+        for (int i = 0; i < 4; i++) {
+            if (rows[i] == fromRow && cols[i] == fromCol) {
+                rows[i] = toRow;
+                cols[i] = toCol;
+                break;
+            }
+        }
     }
 
     public void undoMove(AmazonsMove move, int player) {
-        board[move.getArrowRow()][move.getArrowCol()] = EMPTY;
-        board[move.getToRow()][move.getToCol()] = EMPTY;
-        board[move.getFromRow()][move.getFromCol()] = player;
+        int fromRow = move.getFromRow(), fromCol = move.getFromCol();
+        int toRow   = move.getToRow(),   toCol   = move.getToCol();
+        int arrRow  = move.getArrowRow(), arrCol  = move.getArrowCol();
+
+        board[arrRow][arrCol]   = EMPTY;
+        board[toRow][toCol]     = EMPTY;
+        board[fromRow][fromCol] = player;
+        arrowCount--;
+
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
+        for (int i = 0; i < 4; i++) {
+            if (rows[i] == toRow && cols[i] == toCol) {
+                rows[i] = fromRow;
+                cols[i] = fromCol;
+                break;
+            }
+        }
     }
 
     public int countQueenDestinations(int player) {
-        return countQueenDestinations(getQueenPositions(player));
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
+        int destinations = 0;
+        for (int i = 0; i < 4; i++) {
+            destinations += countDestinationsFrom(rows[i], cols[i]);
+        }
+        return destinations;
     }
 
     public int countActiveQueens(int player) {
-        return countActiveQueens(getQueenPositions(player));
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
+        int active = 0;
+        for (int i = 0; i < 4; i++) {
+            if (queenHasDestination(rows[i], cols[i])) {
+                active++;
+            }
+        }
+        return active;
     }
 
     public int countDestinationsFrom(int row, int col) {
         int destinations = 0;
         for (int[] direction : DIRECTIONS) {
-            int nextRow = row + direction[0];
-            int nextCol = col + direction[1];
-            while (isPlayable(nextRow, nextCol) && board[nextRow][nextCol] == EMPTY) {
+            int r = row + direction[0];
+            int c = col + direction[1];
+            while (isPlayable(r, c) && board[r][c] == EMPTY) {
                 destinations++;
-                nextRow += direction[0];
-                nextCol += direction[1];
+                r += direction[0];
+                c += direction[1];
             }
         }
         return destinations;
@@ -146,10 +213,13 @@ public class AmazonsBoardState {
 
     public int evaluate(int perspective) {
         int opponent = opponent(perspective);
-        List<int[]> myQueens = getQueenPositions(perspective);
-        List<int[]> opponentQueens = getQueenPositions(opponent);
-        int[][] myDistances = queenDistances(myQueens);
-        int[][] opponentDistances = queenDistances(opponentQueens);
+        int[] myRows  = perspective == WHITE ? wQueenRows : bQueenRows;
+        int[] myCols  = perspective == WHITE ? wQueenCols : bQueenCols;
+        int[] oppRows = opponent   == WHITE ? wQueenRows : bQueenRows;
+        int[] oppCols = opponent   == WHITE ? wQueenCols : bQueenCols;
+
+        queenDistances(myRows,  myCols,  SCRATCH_DIST_A);
+        queenDistances(oppRows, oppCols, SCRATCH_DIST_B);
 
         int territoryScore = 0;
         int contestedScore = 0;
@@ -163,17 +233,13 @@ public class AmazonsBoardState {
                     continue;
                 }
 
-                int myDistance = myDistances[row][col];
-                int opponentDistance = opponentDistances[row][col];
-                boolean myFinite = myDistance < INF;
+                int myDistance       = SCRATCH_DIST_A[row][col];
+                int opponentDistance = SCRATCH_DIST_B[row][col];
+                boolean myFinite       = myDistance       < INF;
                 boolean opponentFinite = opponentDistance < INF;
 
-                if (myFinite) {
-                    myReachable++;
-                }
-                if (opponentFinite) {
-                    opponentReachable++;
-                }
+                if (myFinite)       myReachable++;
+                if (opponentFinite) opponentReachable++;
 
                 if (myFinite && !opponentFinite) {
                     territoryScore++;
@@ -186,37 +252,38 @@ public class AmazonsBoardState {
                     } else if (opponentDistance < myDistance) {
                         territoryScore--;
                     } else {
-                        contestedScore += contestedPressure(row, col, myQueens, opponentQueens);
+                        contestedScore += contestedPressure(row, col, myRows, myCols, oppRows, oppCols);
                     }
                 }
             }
         }
 
         if (separated) {
-            int myMoves = countFillMoves(myQueens, myDistances);
-            int opponentMoves = countFillMoves(opponentQueens, opponentDistances);
+            int myMoves       = countFillMoves(SCRATCH_DIST_A);
+            int opponentMoves = countFillMoves(SCRATCH_DIST_B);
             return (myMoves - opponentMoves) * 500;
         }
 
-        int mobilityScore = countQueenDestinations(myQueens) - countQueenDestinations(opponentQueens);
-        int activeQueenScore = countActiveQueens(myQueens) - countActiveQueens(opponentQueens);
+        int mobilityScore    = countQueenDestinations(perspective) - countQueenDestinations(opponent);
+        int activeQueenScore = countActiveQueens(perspective) - countActiveQueens(opponent);
         int reachabilityScore = myReachable - opponentReachable;
-        int trapScore = countTrappedQueens(opponentQueens) - countTrappedQueens(myQueens);
+        int trapScore         = countTrappedQueens(opponent) - countTrappedQueens(perspective);
 
-        int arrows = countArrows();
-        int phase = Math.min(arrows, 40);
+        int phase           = Math.min(arrowCount, 40);
         int territoryWeight = 60 + phase * 3;
-        int mobilityWeight = 12 - phase / 5;
+        int mobilityWeight  = 12 - phase / 5;
 
-        return territoryScore * territoryWeight
-            + mobilityScore * mobilityWeight
-            + activeQueenScore * 15
-            + contestedScore * 2
-            + reachabilityScore
-            + trapScore * 120;
+        return territoryScore  * territoryWeight
+             + mobilityScore   * mobilityWeight
+             + activeQueenScore * 15
+             + contestedScore  * 2
+             + reachabilityScore
+             + trapScore       * 120;
     }
 
-    private int countFillMoves(List<int[]> queens, int[][] distances) {
+    // --- Private helpers ---
+
+    private int countFillMoves(int[][] distances) {
         int moves = 0;
         for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
             for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
@@ -228,19 +295,23 @@ public class AmazonsBoardState {
         return moves;
     }
 
-    private int contestedPressure(int row, int col, List<int[]> myQueens, List<int[]> opponentQueens) {
-        int myPressure = nearbyQueenPressure(row, col, myQueens);
-        int opponentPressure = nearbyQueenPressure(row, col, opponentQueens);
-        if (myPressure == opponentPressure) {
-            return 0;
-        }
-        return myPressure > opponentPressure ? 1 : -1;
+    private int contestedPressure(int row, int col,
+                                   int[] myRows, int[] myCols,
+                                   int[] oppRows, int[] oppCols) {
+        int myP  = nearbyQueenPressure(row, col, myRows,  myCols);
+        int oppP = nearbyQueenPressure(row, col, oppRows, oppCols);
+        if (myP == oppP) return 0;
+        return myP > oppP ? 1 : -1;
     }
 
-    private int nearbyQueenPressure(int targetRow, int targetCol, List<int[]> queens) {
+    private int nearbyQueenPressure(int targetRow, int targetCol,
+                                     int[] queenRows, int[] queenCols) {
         int pressure = 0;
-        for (int[] queen : queens) {
-            int distance = Math.max(Math.abs(queen[0] - targetRow), Math.abs(queen[1] - targetCol));
+        for (int i = 0; i < 4; i++) {
+            int distance = Math.max(
+                Math.abs(queenRows[i] - targetRow),
+                Math.abs(queenCols[i] - targetCol)
+            );
             if (distance <= 2) {
                 pressure += 3 - distance;
             }
@@ -248,36 +319,38 @@ public class AmazonsBoardState {
         return pressure;
     }
 
-    private int[][] queenDistances(List<int[]> queens) {
-        int[][] distances = new int[BOARD_DIMENSION][BOARD_DIMENSION];
+    // Fills `out` with queen-move distances from the given queen set.
+    // Uses static BFS_QUEUE to avoid per-call allocation.
+    private void queenDistances(int[] queenRows, int[] queenCols, int[][] out) {
         for (int row = 0; row < BOARD_DIMENSION; row++) {
-            Arrays.fill(distances[row], INF);
+            Arrays.fill(out[row], INF);
         }
 
-        ArrayDeque<int[]> frontier = new ArrayDeque<int[]>();
-        for (int[] queen : queens) {
-            distances[queen[0]][queen[1]] = 0;
-            frontier.addLast(new int[] {queen[0], queen[1]});
+        int head = 0, tail = 0;
+        for (int i = 0; i < 4; i++) {
+            int r = queenRows[i], c = queenCols[i];
+            out[r][c] = 0;
+            BFS_QUEUE[tail++] = r * BOARD_DIMENSION + c;
         }
 
-        while (!frontier.isEmpty()) {
-            int[] current = frontier.removeFirst();
-            int nextDistance = distances[current[0]][current[1]] + 1;
-            for (int[] direction : DIRECTIONS) {
-                int row = current[0] + direction[0];
-                int col = current[1] + direction[1];
-                while (isPlayable(row, col) && board[row][col] == EMPTY) {
-                    if (nextDistance < distances[row][col]) {
-                        distances[row][col] = nextDistance;
-                        frontier.addLast(new int[] {row, col});
+        while (head < tail) {
+            int idx  = BFS_QUEUE[head++];
+            int r    = idx / BOARD_DIMENSION;
+            int c    = idx % BOARD_DIMENSION;
+            int next = out[r][c] + 1;
+            for (int[] dir : DIRECTIONS) {
+                int nr = r + dir[0];
+                int nc = c + dir[1];
+                while (isPlayable(nr, nc) && board[nr][nc] == EMPTY) {
+                    if (next < out[nr][nc]) {
+                        out[nr][nc] = next;
+                        BFS_QUEUE[tail++] = nr * BOARD_DIMENSION + nc;
                     }
-                    row += direction[0];
-                    col += direction[1];
+                    nr += dir[0];
+                    nc += dir[1];
                 }
             }
         }
-
-        return distances;
     }
 
     private void addMovesForQueen(int player, int fromRow, int fromCol, List<AmazonsMove> moves) {
@@ -309,28 +382,12 @@ public class AmazonsBoardState {
         }
     }
 
-    private int countQueenDestinations(List<int[]> queens) {
-        int destinations = 0;
-        for (int[] queen : queens) {
-            destinations += countDestinationsFrom(queen[0], queen[1]);
-        }
-        return destinations;
-    }
-
-    private int countActiveQueens(List<int[]> queens) {
-        int active = 0;
-        for (int[] queen : queens) {
-            if (queenHasDestination(queen[0], queen[1])) {
-                active++;
-            }
-        }
-        return active;
-    }
-
-    private int countTrappedQueens(List<int[]> queens) {
+    private int countTrappedQueens(int player) {
+        int[] rows = player == WHITE ? wQueenRows : bQueenRows;
+        int[] cols = player == WHITE ? wQueenCols : bQueenCols;
         int trapped = 0;
-        for (int[] queen : queens) {
-            if (!queenHasDestination(queen[0], queen[1])) {
+        for (int i = 0; i < 4; i++) {
+            if (!queenHasDestination(rows[i], cols[i])) {
                 trapped++;
             }
         }
@@ -346,18 +403,6 @@ public class AmazonsBoardState {
             }
         }
         return false;
-    }
-
-    private List<int[]> getQueenPositions(int player) {
-        ArrayList<int[]> queens = new ArrayList<int[]>(4);
-        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
-            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
-                if (board[row][col] == player) {
-                    queens.add(new int[] {row, col});
-                }
-            }
-        }
-        return queens;
     }
 
     private static boolean isPlayable(int row, int col) {
