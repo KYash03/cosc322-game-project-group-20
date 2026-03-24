@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(mvn compile:*)",
-      "Bash(javac -version)",
-      "Bash(javac -cp \"lib/*\" -d target/classes src/main/java/ubc/cosc322/*.java)"
-    ]
-  }
-}

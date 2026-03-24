@@ -24,28 +24,42 @@ public class AmazonsMove {
         this.arrowCol = arrowCol;
     }
 
-    public int getFromRow() {
-        return fromRow;
+    public int getFromRow() { return fromRow; }
+    public int getFromCol() { return fromCol; }
+    public int getToRow() { return toRow; }
+    public int getToCol() { return toCol; }
+    public int getArrowRow() { return arrowRow; }
+    public int getArrowCol() { return arrowCol; }
+
+    /**
+     * Packs a move into a 24-bit int (6 x 4-bit coordinates). Coordinates are 0-15; the project uses 1-10.
+     * Layout: fr<<20 | fc<<16 | tr<<12 | tc<<8 | ar<<4 | ac
+     */
+    public static int pack(int fromRow, int fromCol, int toRow, int toCol, int arrowRow, int arrowCol) {
+        return (fromRow << 20)
+            | (fromCol << 16)
+            | (toRow << 12)
+            | (toCol << 8)
+            | (arrowRow << 4)
+            | arrowCol;
     }
 
-    public int getFromCol() {
-        return fromCol;
+    public static int pack(AmazonsMove move) {
+        return pack(
+            move.fromRow, move.fromCol,
+            move.toRow, move.toCol,
+            move.arrowRow, move.arrowCol
+        );
     }
 
-    public int getToRow() {
-        return toRow;
-    }
-
-    public int getToCol() {
-        return toCol;
-    }
-
-    public int getArrowRow() {
-        return arrowRow;
-    }
-
-    public int getArrowCol() {
-        return arrowCol;
+    public static AmazonsMove unpack(int packed) {
+        int fromRow = (packed >>> 20) & 0xF;
+        int fromCol = (packed >>> 16) & 0xF;
+        int toRow = (packed >>> 12) & 0xF;
+        int toCol = (packed >>> 8) & 0xF;
+        int arrowRow = (packed >>> 4) & 0xF;
+        int arrowCol = packed & 0xF;
+        return new AmazonsMove(fromRow, fromCol, toRow, toCol, arrowRow, arrowCol);
     }
 
     public ArrayList<Integer> toCurrentPosition() {
@@ -99,12 +113,8 @@ public class AmazonsMove {
 
     @Override
     public boolean equals(Object other) {
-        if (this == other) {
-            return true;
-        }
-        if (!(other instanceof AmazonsMove)) {
-            return false;
-        }
+        if (this == other) return true;
+        if (!(other instanceof AmazonsMove)) return false;
         AmazonsMove move = (AmazonsMove) other;
         return fromRow == move.fromRow
             && fromCol == move.fromCol
