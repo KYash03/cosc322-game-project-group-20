@@ -16,7 +16,13 @@ public class AmazonsBoardState {
     public static final int NONE = 0;
 
     public static int opponent(int color) {
-        return color == WHITE ? WHITE : BLACK;
+        if (color == WHITE) {
+            return BLACK;
+        }
+        if (color == BLACK) {
+            return WHITE;
+        }
+        return NONE;
     }
 
     private static final int INF = 1_000_000;
@@ -28,14 +34,12 @@ public class AmazonsBoardState {
 
     private final int[][] board;
 
-    // Cached queen positions — always exactly 4 per side in Amazons
     private final int[] wQueenRows = new int[4];
     private final int[] wQueenCols = new int[4];
     private final int[] bQueenRows = new int[4];
     private final int[] bQueenCols = new int[4];
     private int arrowCount;
 
-    // Static scratch buffers — search is single-threaded so safe to share
     private static final int[][] SCRATCH_DIST_A = new int[BOARD_DIMENSION][BOARD_DIMENSION];
     private static final int[][] SCRATCH_DIST_B = new int[BOARD_DIMENSION][BOARD_DIMENSION];
     private static final int[] BFS_QUEUE = new int[BOARD_DIMENSION * BOARD_DIMENSION];
@@ -51,10 +55,12 @@ public class AmazonsBoardState {
 
         AmazonsBoardState state = new AmazonsBoardState();
         int wi = 0, bi = 0;
+
         for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
             for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
                 int cell = encodedState.get(BOARD_DIMENSION * row + col).intValue();
                 state.board[row][col] = cell;
+
                 if (cell == WHITE) {
                     state.wQueenRows[wi] = row;
                     state.wQueenCols[wi++] = col;
@@ -109,6 +115,23 @@ public class AmazonsBoardState {
         return arrowCount;
     }
 
+    public long computeHash() {
+        long hash = 1469598103934665603L;
+        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
+            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
+                hash ^= board[row][col];
+                hash *= 1099511628211L;
+                hash ^= row;
+                hash *= 1099511628211L;
+                hash ^= col;
+                hash *= 1099511628211L;
+            }
+        }
+        hash ^= arrowCount;
+        hash *= 1099511628211L;
+        return hash;
+    }
+
     public boolean hasAnyMoves(int player) {
         int[] rows = player == WHITE ? wQueenRows : bQueenRows;
         int[] cols = player == WHITE ? wQueenCols : bQueenCols;
@@ -131,16 +154,20 @@ public class AmazonsBoardState {
     }
 
     public void applyMove(AmazonsMove move, int player) {
-        int fromRow = move.getFromRow(), fromCol = move.getFromCol();
-        int toRow   = move.getToRow(),   toCol   = move.getToCol();
-        int arrRow  = move.getArrowRow(), arrCol  = move.getArrowCol();
+        int fromRow = move.getFromRow();
+        int fromCol = move.getFromCol();
+        int toRow = move.getToRow();
+        int toCol = move.getToCol();
+        int arrRow = move.getArrowRow();
+        int arrCol = move.getArrowCol();
 
         if (board[fromRow][fromCol] != player) {
             throw new IllegalArgumentException("Source square does not contain the expected piece");
         }
+
         board[fromRow][fromCol] = EMPTY;
-        board[toRow][toCol]     = player;
-        board[arrRow][arrCol]   = ARROW;
+        board[toRow][toCol] = player;
+        board[arrRow][arrCol] = ARROW;
         arrowCount++;
 
         int[] rows = player == WHITE ? wQueenRows : bQueenRows;
@@ -155,12 +182,15 @@ public class AmazonsBoardState {
     }
 
     public void undoMove(AmazonsMove move, int player) {
-        int fromRow = move.getFromRow(), fromCol = move.getFromCol();
-        int toRow   = move.getToRow(),   toCol   = move.getToCol();
-        int arrRow  = move.getArrowRow(), arrCol  = move.getArrowCol();
+        int fromRow = move.getFromRow();
+        int fromCol = move.getFromCol();
+        int toRow = move.getToRow();
+        int toCol = move.getToCol();
+        int arrRow = move.getArrowRow();
+        int arrCol = move.getArrowCol();
 
-        board[arrRow][arrCol]   = EMPTY;
-        board[toRow][toCol]     = EMPTY;
+        board[arrRow][arrCol] = EMPTY;
+        board[toRow][toCol] = EMPTY;
         board[fromRow][fromCol] = player;
         arrowCount--;
 
@@ -211,14 +241,22 @@ public class AmazonsBoardState {
         return destinations;
     }
 
+    public int fastEvaluate(int perspective) {
+        int opponent = opponent(perspective);
+        int mobilityScore = countQueenDestinations(perspective) - countQueenDestinations(opponent);
+        int activeQueenScore = countActiveQueens(perspective) - countActiveQueens(opponent);
+        int trapScore = countTrappedQueens(opponent) - countTrappedQueens(perspective);
+        return mobilityScore * 12 + activeQueenScore * 20 + trapScore * 100;
+    }
+
     public int evaluate(int perspective) {
         int opponent = opponent(perspective);
-        int[] myRows  = perspective == WHITE ? wQueenRows : bQueenRows;
-        int[] myCols  = perspective == WHITE ? wQueenCols : bQueenCols;
-        int[] oppRows = opponent   == WHITE ? wQueenRows : bQueenRows;
-        int[] oppCols = opponent   == WHITE ? wQueenCols : bQueenCols;
+        int[] myRows = perspective == WHITE ? wQueenRows : bQueenRows;
+        int[] myCols = perspective == WHITE ? wQueenCols : bQueenCols;
+        int[] oppRows = opponent == WHITE ? wQueenRows : bQueenRows;
+        int[] oppCols = opponent == WHITE ? wQueenCols : bQueenCols;
 
-        queenDistances(myRows,  myCols,  SCRATCH_DIST_A);
+        queenDistances(myRows, myCols, SCRATCH_DIST_A);
         queenDistances(oppRows, oppCols, SCRATCH_DIST_B);
 
         int territoryScore = 0;
@@ -233,13 +271,17 @@ public class AmazonsBoardState {
                     continue;
                 }
 
-                int myDistance       = SCRATCH_DIST_A[row][col];
+                int myDistance = SCRATCH_DIST_A[row][col];
                 int opponentDistance = SCRATCH_DIST_B[row][col];
-                boolean myFinite       = myDistance       < INF;
+                boolean myFinite = myDistance < INF;
                 boolean opponentFinite = opponentDistance < INF;
 
-                if (myFinite)       myReachable++;
-                if (opponentFinite) opponentReachable++;
+                if (myFinite) {
+                    myReachable++;
+                }
+                if (opponentFinite) {
+                    opponentReachable++;
+                }
 
                 if (myFinite && !opponentFinite) {
                     territoryScore++;
@@ -259,29 +301,27 @@ public class AmazonsBoardState {
         }
 
         if (separated) {
-            int myMoves       = countFillMoves(SCRATCH_DIST_A);
+            int myMoves = countFillMoves(SCRATCH_DIST_A);
             int opponentMoves = countFillMoves(SCRATCH_DIST_B);
             return (myMoves - opponentMoves) * 500;
         }
 
-        int mobilityScore    = countQueenDestinations(perspective) - countQueenDestinations(opponent);
+        int mobilityScore = countQueenDestinations(perspective) - countQueenDestinations(opponent);
         int activeQueenScore = countActiveQueens(perspective) - countActiveQueens(opponent);
         int reachabilityScore = myReachable - opponentReachable;
-        int trapScore         = countTrappedQueens(opponent) - countTrappedQueens(perspective);
+        int trapScore = countTrappedQueens(opponent) - countTrappedQueens(perspective);
 
-        int phase           = Math.min(arrowCount, 40);
+        int phase = Math.min(arrowCount, 40);
         int territoryWeight = 60 + phase * 3;
-        int mobilityWeight  = 12 - phase / 5;
+        int mobilityWeight = 12 - phase / 5;
 
-        return territoryScore  * territoryWeight
-             + mobilityScore   * mobilityWeight
-             + activeQueenScore * 15
-             + contestedScore  * 2
-             + reachabilityScore
-             + trapScore       * 120;
+        return territoryScore * territoryWeight
+            + mobilityScore * mobilityWeight
+            + activeQueenScore * 15
+            + contestedScore * 2
+            + reachabilityScore
+            + trapScore * 120;
     }
-
-    // --- Private helpers ---
 
     private int countFillMoves(int[][] distances) {
         int moves = 0;
@@ -296,16 +336,18 @@ public class AmazonsBoardState {
     }
 
     private int contestedPressure(int row, int col,
-                                   int[] myRows, int[] myCols,
-                                   int[] oppRows, int[] oppCols) {
-        int myP  = nearbyQueenPressure(row, col, myRows,  myCols);
+                                  int[] myRows, int[] myCols,
+                                  int[] oppRows, int[] oppCols) {
+        int myP = nearbyQueenPressure(row, col, myRows, myCols);
         int oppP = nearbyQueenPressure(row, col, oppRows, oppCols);
-        if (myP == oppP) return 0;
+        if (myP == oppP) {
+            return 0;
+        }
         return myP > oppP ? 1 : -1;
     }
 
     private int nearbyQueenPressure(int targetRow, int targetCol,
-                                     int[] queenRows, int[] queenCols) {
+                                    int[] queenRows, int[] queenCols) {
         int pressure = 0;
         for (int i = 0; i < 4; i++) {
             int distance = Math.max(
@@ -319,25 +361,27 @@ public class AmazonsBoardState {
         return pressure;
     }
 
-    // Fills `out` with queen-move distances from the given queen set.
-    // Uses static BFS_QUEUE to avoid per-call allocation.
     private void queenDistances(int[] queenRows, int[] queenCols, int[][] out) {
         for (int row = 0; row < BOARD_DIMENSION; row++) {
             Arrays.fill(out[row], INF);
         }
 
-        int head = 0, tail = 0;
+        int head = 0;
+        int tail = 0;
+
         for (int i = 0; i < 4; i++) {
-            int r = queenRows[i], c = queenCols[i];
+            int r = queenRows[i];
+            int c = queenCols[i];
             out[r][c] = 0;
             BFS_QUEUE[tail++] = r * BOARD_DIMENSION + c;
         }
 
         while (head < tail) {
-            int idx  = BFS_QUEUE[head++];
-            int r    = idx / BOARD_DIMENSION;
-            int c    = idx % BOARD_DIMENSION;
+            int idx = BFS_QUEUE[head++];
+            int r = idx / BOARD_DIMENSION;
+            int c = idx % BOARD_DIMENSION;
             int next = out[r][c] + 1;
+
             for (int[] dir : DIRECTIONS) {
                 int nr = r + dir[0];
                 int nc = c + dir[1];
@@ -357,6 +401,7 @@ public class AmazonsBoardState {
         for (int[] direction : DIRECTIONS) {
             int toRow = fromRow + direction[0];
             int toCol = fromCol + direction[1];
+
             while (isPlayable(toRow, toCol) && board[toRow][toCol] == EMPTY) {
                 board[fromRow][fromCol] = EMPTY;
                 board[toRow][toCol] = player;

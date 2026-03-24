@@ -116,6 +116,7 @@ public class COSC322Test extends GamePlayer {
 
         currentState = AmazonsBoardState.fromServerState(encodedState);
         sideToMove = currentState.inferSideToMove();
+
         if (gamegui != null) {
             gamegui.setGameState(encodedState);
         }
@@ -133,13 +134,20 @@ public class COSC322Test extends GamePlayer {
         ArrayList<Integer> encodedState = coerceIntegerList(msgDetails.get(AmazonsGameMessage.GAME_STATE));
         if (encodedState != null) {
             currentState = AmazonsBoardState.fromServerState(encodedState);
+            sideToMove = currentState.inferSideToMove();
             if (gamegui != null) {
                 gamegui.setGameState(encodedState);
             }
+        } else {
+            sideToMove = AmazonsBoardState.BLACK;
         }
-        sideToMove = AmazonsBoardState.BLACK;
 
         log("Game start. black=%s white=%s mySide=%d turn=%d", blackPlayerName, whitePlayerName, mySide, sideToMove);
+        System.out.println("BLACK = " + blackPlayerName);
+        System.out.println("WHITE = " + whitePlayerName);
+        System.out.println("MYSIDE = " + mySide);
+        System.out.println("SIDETOMOVE = " + sideToMove);
+
         return shouldAutoPlay();
     }
 
@@ -157,6 +165,9 @@ public class COSC322Test extends GamePlayer {
         }
 
         log("Move received from %d: %s. nextTurn=%d", mover, move, sideToMove);
+        System.out.println("MOVER = " + mover);
+        System.out.println("NEXT = " + sideToMove);
+
         return shouldAutoPlay();
     }
 
@@ -191,17 +202,19 @@ public class COSC322Test extends GamePlayer {
         }
 
         gameClient.sendMoveMessage(
-                result.getMove().toCurrentPosition(),
-                result.getMove().toNewPosition(),
-                result.getMove().toArrowPosition()
-            );
-            if (currentState != null) {
-                currentState.applyMove(result.getMove(), turn);
-                sideToMove = AmazonsBoardState.opponent(turn);
-            }
-            if (gamegui != null) {
-                gamegui.updateGameState(result.getMove().toMessageDetails());
-            }
+            result.getMove().toCurrentPosition(),
+            result.getMove().toNewPosition(),
+            result.getMove().toArrowPosition()
+        );
+
+        if (currentState != null) {
+            currentState.applyMove(result.getMove(), turn);
+            sideToMove = AmazonsBoardState.opponent(turn);
+        }
+
+        if (gamegui != null) {
+            gamegui.updateGameState(result.getMove().toMessageDetails());
+        }
     }
 
     private int resolveMySide() {

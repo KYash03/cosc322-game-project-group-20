@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Run COSC322Test",
+      "request": "launch",
+      "mainClass": "ubc.cosc322.COSC322Test",
+      "args": "cosc322 cosc322"
+    }
+  ]
+}
