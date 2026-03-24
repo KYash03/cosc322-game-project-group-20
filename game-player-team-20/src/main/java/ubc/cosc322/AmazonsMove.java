@@ -7,7 +7,7 @@ import java.util.Objects;
 
 import ygraph.ai.smartfox.games.amazons.AmazonsGameMessage;
 
-public class AmazonsMove {
+public final class AmazonsMove {
     private final int fromRow;
     private final int fromCol;
     private final int toRow;
@@ -31,48 +31,9 @@ public class AmazonsMove {
     public int getArrowRow() { return arrowRow; }
     public int getArrowCol() { return arrowCol; }
 
-    /**
-     * Packs a move into a 24-bit int (6 x 4-bit coordinates). Coordinates are 0-15; the project uses 1-10.
-     * Layout: fr<<20 | fc<<16 | tr<<12 | tc<<8 | ar<<4 | ac
-     */
-    public static int pack(int fromRow, int fromCol, int toRow, int toCol, int arrowRow, int arrowCol) {
-        return (fromRow << 20)
-            | (fromCol << 16)
-            | (toRow << 12)
-            | (toCol << 8)
-            | (arrowRow << 4)
-            | arrowCol;
-    }
-
-    public static int pack(AmazonsMove move) {
-        return pack(
-            move.fromRow, move.fromCol,
-            move.toRow, move.toCol,
-            move.arrowRow, move.arrowCol
-        );
-    }
-
-    public static AmazonsMove unpack(int packed) {
-        int fromRow = (packed >>> 20) & 0xF;
-        int fromCol = (packed >>> 16) & 0xF;
-        int toRow = (packed >>> 12) & 0xF;
-        int toCol = (packed >>> 8) & 0xF;
-        int arrowRow = (packed >>> 4) & 0xF;
-        int arrowCol = packed & 0xF;
-        return new AmazonsMove(fromRow, fromCol, toRow, toCol, arrowRow, arrowCol);
-    }
-
-    public ArrayList<Integer> toCurrentPosition() {
-        return pair(fromRow, fromCol);
-    }
-
-    public ArrayList<Integer> toNewPosition() {
-        return pair(toRow, toCol);
-    }
-
-    public ArrayList<Integer> toArrowPosition() {
-        return pair(arrowRow, arrowCol);
-    }
+    public ArrayList<Integer> toCurrentPosition() { return pair(fromRow, fromCol); }
+    public ArrayList<Integer> toNewPosition() { return pair(toRow, toCol); }
+    public ArrayList<Integer> toArrowPosition() { return pair(arrowRow, arrowCol); }
 
     public Map<String, Object> toMessageDetails() {
         Map<String, Object> payload = new HashMap<String, Object>();
@@ -99,29 +60,51 @@ public class AmazonsMove {
         );
     }
 
-    @SuppressWarnings("unchecked")
-    private static ArrayList<Integer> castPair(Object value) {
-        return value instanceof ArrayList ? (ArrayList<Integer>) value : null;
+    /**
+     * 24-bit packed move (6 x 4-bit): fr<<20|fc<<16|tr<<12|tc<<8|ar<<4|ac
+     */
+    public static int pack(AmazonsMove m) {
+        return (m.fromRow << 20)
+            | (m.fromCol << 16)
+            | (m.toRow << 12)
+            | (m.toCol << 8)
+            | (m.arrowRow << 4)
+            | m.arrowCol;
+    }
+
+    public static AmazonsMove unpack(int packed) {
+        int fr = (packed >>> 20) & 0xF;
+        int fc = (packed >>> 16) & 0xF;
+        int tr = (packed >>> 12) & 0xF;
+        int tc = (packed >>> 8) & 0xF;
+        int ar = (packed >>> 4) & 0xF;
+        int ac = packed & 0xF;
+        return new AmazonsMove(fr, fc, tr, tc, ar, ac);
     }
 
     private static ArrayList<Integer> pair(int row, int col) {
-        ArrayList<Integer> values = new ArrayList<Integer>(2);
-        values.add(row);
-        values.add(col);
-        return values;
+        ArrayList<Integer> v = new ArrayList<Integer>(2);
+        v.add(row);
+        v.add(col);
+        return v;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ArrayList<Integer> castPair(Object value) {
+        return value instanceof ArrayList ? (ArrayList<Integer>) value : null;
     }
 
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;
         if (!(other instanceof AmazonsMove)) return false;
-        AmazonsMove move = (AmazonsMove) other;
-        return fromRow == move.fromRow
-            && fromCol == move.fromCol
-            && toRow == move.toRow
-            && toCol == move.toCol
-            && arrowRow == move.arrowRow
-            && arrowCol == move.arrowCol;
+        AmazonsMove m = (AmazonsMove) other;
+        return fromRow == m.fromRow
+            && fromCol == m.fromCol
+            && toRow == m.toRow
+            && toCol == m.toCol
+            && arrowRow == m.arrowRow
+            && arrowCol == m.arrowCol;
     }
 
     @Override
@@ -131,9 +114,6 @@ public class AmazonsMove {
 
     @Override
     public String toString() {
-        return String.format(
-            "(%d,%d)->(%d,%d) arrow (%d,%d)",
-            fromRow, fromCol, toRow, toCol, arrowRow, arrowCol
-        );
+        return String.format("(%d,%d)->(%d,%d) arrow (%d,%d)", fromRow, fromCol, toRow, toCol, arrowRow, arrowCol);
     }
 }
