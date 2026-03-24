@@ -139,7 +139,7 @@ public class COSC322Test extends GamePlayer {
                 gamegui.setGameState(encodedState);
             }
         } else {
-            sideToMove = AmazonsBoardState.BLACK;
+            sideToMove = AmazonsBoardState.WHITE;
         }
 
         log("Game start. black=%s white=%s mySide=%d turn=%d", blackPlayerName, whitePlayerName, mySide, sideToMove);
