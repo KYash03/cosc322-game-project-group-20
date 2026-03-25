@@ -18,6 +18,7 @@ public class COSC322Test extends GamePlayer {
     private GameClient gameClient;
     private BaseGameGUI gamegui;
     private String userName;
+    private final AlphaBetaSearch search = new AlphaBetaSearch();
 
     private AmazonsBoardState currentState;
     private int mySide = AmazonsBoardState.NONE;
@@ -131,6 +132,7 @@ public class COSC322Test extends GamePlayer {
         whitePlayerName = stringValue(msgDetails.get(AmazonsGameMessage.PLAYER_WHITE));
         mySide = resolveMySide();
         gameActive = true;
+        search.clearTranspositionTable();
 
         ArrayList<Integer> encodedState = coerceIntegerList(msgDetails.get(AmazonsGameMessage.GAME_STATE));
         if (encodedState != null) {
@@ -171,7 +173,6 @@ public class COSC322Test extends GamePlayer {
 
         final AmazonsBoardState searchState = currentState.copy();
         final int turn = sideToMove;
-        final AlphaBetaSearch search = new AlphaBetaSearch();
         final AlphaBetaSearch.SearchResult result = search.chooseMove(searchState, turn);
 
         if (result.getMove() == null) {
