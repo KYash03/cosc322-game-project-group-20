@@ -11,8 +11,8 @@ public class AmazonsBoardState {
     public static final int MAX_INDEX = 10;
 
     public static final int EMPTY = 0;
-    public static final int WHITE = 1;
-    public static final int BLACK = 2;
+    public static final int BLACK = 1;
+    public static final int WHITE = 2;
     public static final int ARROW = 3;
     public static final int NONE = 0;
 
