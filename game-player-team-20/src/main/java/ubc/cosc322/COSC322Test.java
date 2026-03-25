@@ -1,7 +1,9 @@
 package ubc.cosc322;
 
 import java.awt.EventQueue;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import ygraph.ai.smartfox.games.BaseGameGUI;
@@ -12,6 +14,7 @@ import ygraph.ai.smartfox.games.amazons.AmazonsGameMessage;
 
 public class COSC322Test extends GamePlayer {
     private static final String USER_COUNT_CHANGE = "user-count-change";
+    private static final int REPETITION_HISTORY_LIMIT = 16;
 
     private final String password;
 
@@ -26,6 +29,7 @@ public class COSC322Test extends GamePlayer {
     private boolean gameActive;
     private String blackPlayerName;
     private String whitePlayerName;
+    private final ArrayDeque<Long> recentStates = new ArrayDeque<Long>(REPETITION_HISTORY_LIMIT);
 
     public static void main(String[] args) {
         if (args.length < 2) {
@@ -124,6 +128,7 @@ public class COSC322Test extends GamePlayer {
         }
 
         log("Board synced. inferredTurn=%d arrows=%d", sideToMove, currentState.countArrows());
+        rememberCurrentPosition();
         return shouldAutoPlay();
     }
 
@@ -144,6 +149,7 @@ public class COSC322Test extends GamePlayer {
         } else if (sideToMove == AmazonsBoardState.NONE) {
             sideToMove = AmazonsBoardState.BLACK;
         }
+        resetRecentStates();
 
         log("Game start. black=%s white=%s mySide=%d turn=%d", blackPlayerName, whitePlayerName, mySide, sideToMove);
         return shouldAutoPlay();
@@ -163,6 +169,7 @@ public class COSC322Test extends GamePlayer {
         }
 
         log("Move received from %d: %s. nextTurn=%d", mover, move, sideToMove);
+        rememberCurrentPosition();
         return shouldAutoPlay();
     }
 
@@ -173,7 +180,7 @@ public class COSC322Test extends GamePlayer {
 
         final AmazonsBoardState searchState = currentState.copy();
         final int turn = sideToMove;
-        final AlphaBetaSearch.SearchResult result = search.chooseMove(searchState, turn);
+        final AlphaBetaSearch.SearchResult result = search.chooseMove(searchState, turn, recentStateSnapshot());
 
         if (result.getMove() == null) {
             gameActive = false;
@@ -203,6 +210,7 @@ public class COSC322Test extends GamePlayer {
             if (currentState != null) {
                 currentState.applyMove(result.getMove(), turn);
                 sideToMove = AmazonsBoardState.opponent(turn);
+                rememberCurrentPosition();
             }
             if (gamegui != null) {
                 gamegui.updateGameState(result.getMove().toMessageDetails());
@@ -233,6 +241,29 @@ public class COSC322Test extends GamePlayer {
             && currentState != null
             && mySide != AmazonsBoardState.NONE
             && sideToMove == mySide;
+    }
+
+    private void resetRecentStates() {
+        recentStates.clear();
+        rememberCurrentPosition();
+    }
+
+    private void rememberCurrentPosition() {
+        if (currentState == null || sideToMove == AmazonsBoardState.NONE) {
+            return;
+        }
+        long stateHash = currentState.getZobristHash(sideToMove);
+        if (!recentStates.isEmpty() && recentStates.peekLast().longValue() == stateHash) {
+            return;
+        }
+        recentStates.addLast(Long.valueOf(stateHash));
+        while (recentStates.size() > REPETITION_HISTORY_LIMIT) {
+            recentStates.removeFirst();
+        }
+    }
+
+    private List<Long> recentStateSnapshot() {
+        return new ArrayList<Long>(recentStates);
     }
 
     @SuppressWarnings("unchecked")
