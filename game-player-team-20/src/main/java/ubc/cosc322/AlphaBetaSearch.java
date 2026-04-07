@@ -550,7 +550,7 @@ public class AlphaBetaSearch {
             }
 
             if (depth == 0) {
-                return board.evaluate(player) - repetitionPenalty(stateHash);
+                return AmazonsEvaluator.evaluate(board, player) - repetitionPenalty(stateHash);
             }
 
             List<AmazonsMove> orderedMoves = orderMoves(player, depth, entry == null ? null : entry.bestMove);

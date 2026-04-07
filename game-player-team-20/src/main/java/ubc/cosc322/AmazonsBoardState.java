@@ -1,8 +1,6 @@
 package ubc.cosc322;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
@@ -17,15 +15,13 @@ public class AmazonsBoardState {
     public static final int ARROW = 3;
     public static final int NONE = 0;
 
-    private static final int INF = 1_000_000;
-    private static final int[][] DIRECTIONS = {
+    public static final int[][] DIRECTIONS = {
         {-1, -1}, {-1, 0}, {-1, 1},
         {0, -1},           {0, 1},
         {1, -1},  {1, 0},  {1, 1}
     };
     private static final long[][][] ZOBRIST = initZobrist();
     private static final long[] SIDE_TO_MOVE_HASH = initSideHashes();
-    private static final ThreadLocal<EvalScratch> EVAL_SCRATCH = ThreadLocal.withInitial(EvalScratch::new);
 
     private final int[][] board;
     private final ArrayList<int[]> blackQueens;
@@ -177,172 +173,8 @@ public class AmazonsBoardState {
         return destinations;
     }
 
-    public int evaluate(int perspective) {
-        int opponent = opponent(perspective);
-        List<int[]> myQueens = getQueenPositions(perspective);
-        List<int[]> opponentQueens = getQueenPositions(opponent);
-        EvalScratch scratch = EVAL_SCRATCH.get();
-        int[][] myDistances = scratch.distancesA;
-        int[][] opponentDistances = scratch.distancesB;
-        queenDistances(myQueens, myDistances, scratch);
-        queenDistances(opponentQueens, opponentDistances, scratch);
-
-        int territoryScore = 0;
-        int contestedScore = 0;
-        int frontierScore = 0;
-        int myReachable = 0;
-        int opponentReachable = 0;
-        boolean separated = true;
-
-        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
-            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
-                if (board[row][col] != EMPTY) {
-                    continue;
-                }
-
-                int myDistance = myDistances[row][col];
-                int opponentDistance = opponentDistances[row][col];
-                boolean myFinite = myDistance < INF;
-                boolean opponentFinite = opponentDistance < INF;
-
-                if (myFinite) {
-                    myReachable++;
-                }
-                if (opponentFinite) {
-                    opponentReachable++;
-                }
-
-                if (myFinite && !opponentFinite) {
-                    territoryScore++;
-                } else if (!myFinite && opponentFinite) {
-                    territoryScore--;
-                } else if (myFinite && opponentFinite) {
-                    separated = false;
-                    int frontierWeight = frontierWeight(row, col);
-                    if (myDistance < opponentDistance) {
-                        territoryScore++;
-                        if (frontierWeight > 0 && myDistance + 1 >= opponentDistance) {
-                            frontierScore += frontierWeight;
-                        }
-                    } else if (opponentDistance < myDistance) {
-                        territoryScore--;
-                        if (frontierWeight > 0 && opponentDistance + 1 >= myDistance) {
-                            frontierScore -= frontierWeight;
-                        }
-                    } else {
-                        contestedScore += contestedPressure(row, col, myQueens, opponentQueens);
-                        if (frontierWeight > 0) {
-                            frontierScore += frontierWeight * contestedPressure(row, col, myQueens, opponentQueens);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (separated) {
-            int myMoves = countFillMoves(myDistances);
-            int opponentMoves = countFillMoves(opponentDistances);
-            return (myMoves - opponentMoves) * 500;
-        }
-
-        int mobilityScore = countQueenDestinations(myQueens) - countQueenDestinations(opponentQueens);
-        int activeQueenScore = countActiveQueens(myQueens) - countActiveQueens(opponentQueens);
-        int reachabilityScore = myReachable - opponentReachable;
-        int trapScore = countTrappedQueens(opponentQueens) - countTrappedQueens(myQueens);
-        int localMobilityScore = localMobilityScore(myQueens) - localMobilityScore(opponentQueens);
-        int nearTrapScore = countNearTrappedQueens(opponentQueens) - countNearTrappedQueens(myQueens);
-        int escapeScore = queenEscapeScore(myQueens) - queenEscapeScore(opponentQueens);
-        int regionScore = regionControlScore(myDistances, opponentDistances, scratch);
-
-        int phase = Math.min(arrowCount, 40);
-        int territoryWeight = 60 + phase * 3;
-        int mobilityWeight = 12 - phase / 5;
-        int frontierWeight = arrowCount < 12 ? 0 : (arrowCount < 30 ? 4 : 7);
-        int escapeWeight = arrowCount < 8 ? 2 : (arrowCount < 28 ? 7 : 10);
-
-        return territoryScore * territoryWeight
-            + mobilityScore * mobilityWeight
-            + localMobilityScore * 5
-            + activeQueenScore * 15
-            + contestedScore * 2
-            + frontierScore * frontierWeight
-            + reachabilityScore
-            + escapeScore * escapeWeight
-            + trapScore * 120
-            + nearTrapScore * 45
-            + regionScore * 30;
-    }
-
     public long getZobristHash(int sideToMove) {
         return zobristHash ^ SIDE_TO_MOVE_HASH[sideToMove];
-    }
-
-    private int countFillMoves(int[][] distances) {
-        int moves = 0;
-        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
-            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
-                if (board[row][col] == EMPTY && distances[row][col] < INF) {
-                    moves++;
-                }
-            }
-        }
-        return moves;
-    }
-
-    private int contestedPressure(int row, int col, List<int[]> myQueens, List<int[]> opponentQueens) {
-        int myPressure = nearbyQueenPressure(row, col, myQueens);
-        int opponentPressure = nearbyQueenPressure(row, col, opponentQueens);
-        if (myPressure == opponentPressure) {
-            return 0;
-        }
-        return myPressure > opponentPressure ? 1 : -1;
-    }
-
-    private int nearbyQueenPressure(int targetRow, int targetCol, List<int[]> queens) {
-        int pressure = 0;
-        for (int[] queen : queens) {
-            int distance = Math.max(Math.abs(queen[0] - targetRow), Math.abs(queen[1] - targetCol));
-            if (distance <= 2) {
-                pressure += 3 - distance;
-            }
-        }
-        return pressure;
-    }
-
-    private void queenDistances(List<int[]> queens, int[][] distances, EvalScratch scratch) {
-        for (int row = 0; row < BOARD_DIMENSION; row++) {
-            Arrays.fill(distances[row], INF);
-        }
-
-        int head = 0;
-        int tail = 0;
-        for (int[] queen : queens) {
-            distances[queen[0]][queen[1]] = 0;
-            scratch.queueRows[tail] = queen[0];
-            scratch.queueCols[tail] = queen[1];
-            tail++;
-        }
-
-        while (head < tail) {
-            int currentRow = scratch.queueRows[head];
-            int currentCol = scratch.queueCols[head];
-            head++;
-            int nextDistance = distances[currentRow][currentCol] + 1;
-            for (int[] direction : DIRECTIONS) {
-                int row = currentRow + direction[0];
-                int col = currentCol + direction[1];
-                while (isPlayable(row, col) && board[row][col] == EMPTY) {
-                    if (nextDistance < distances[row][col]) {
-                        distances[row][col] = nextDistance;
-                        scratch.queueRows[tail] = row;
-                        scratch.queueCols[tail] = col;
-                        tail++;
-                    }
-                    row += direction[0];
-                    col += direction[1];
-                }
-            }
-        }
     }
 
     private void addMovesForQueen(int player, int fromRow, int fromCol, List<AmazonsMove> moves) {
@@ -392,116 +224,6 @@ public class AmazonsBoardState {
         return active;
     }
 
-    private int countTrappedQueens(List<int[]> queens) {
-        int trapped = 0;
-        for (int[] queen : queens) {
-            if (!queenHasDestination(queen[0], queen[1])) {
-                trapped++;
-            }
-        }
-        return trapped;
-    }
-
-    private int countNearTrappedQueens(List<int[]> queens) {
-        int nearTrapped = 0;
-        for (int[] queen : queens) {
-            if (countDestinationsFrom(queen[0], queen[1]) <= 4) {
-                nearTrapped++;
-            }
-        }
-        return nearTrapped;
-    }
-
-    private int localMobilityScore(List<int[]> queens) {
-        int score = 0;
-        for (int[] queen : queens) {
-            score += Math.min(12, countDestinationsFrom(queen[0], queen[1]));
-        }
-        return score;
-    }
-
-    private int queenEscapeScore(List<int[]> queens) {
-        int score = 0;
-        for (int[] queen : queens) {
-            int openDirections = 0;
-            int longDirections = 0;
-            for (int[] direction : DIRECTIONS) {
-                int nextRow = queen[0] + direction[0];
-                int nextCol = queen[1] + direction[1];
-                if (isPlayable(nextRow, nextCol) && board[nextRow][nextCol] == EMPTY) {
-                    openDirections++;
-                    int secondRow = nextRow + direction[0];
-                    int secondCol = nextCol + direction[1];
-                    if (isPlayable(secondRow, secondCol) && board[secondRow][secondCol] == EMPTY) {
-                        longDirections++;
-                    }
-                }
-            }
-            score += openDirections * 3 + longDirections * 2;
-            if (openDirections <= 2) {
-                score -= (3 - openDirections) * 6;
-            }
-        }
-        return score;
-    }
-
-    private int regionControlScore(int[][] myDistances, int[][] opponentDistances, EvalScratch scratch) {
-        int mark = scratch.nextRegionMark();
-        int score = 0;
-
-        for (int row = MIN_INDEX; row <= MAX_INDEX; row++) {
-            for (int col = MIN_INDEX; col <= MAX_INDEX; col++) {
-                if (board[row][col] != EMPTY || scratch.regionMarks[row][col] == mark) {
-                    continue;
-                }
-
-                int head = 0;
-                int tail = 0;
-                int regionSize = 0;
-                boolean myReachable = false;
-                boolean opponentReachable = false;
-
-                scratch.regionMarks[row][col] = mark;
-                scratch.queueRows[tail] = row;
-                scratch.queueCols[tail] = col;
-                tail++;
-
-                while (head < tail) {
-                    int currentRow = scratch.queueRows[head];
-                    int currentCol = scratch.queueCols[head];
-                    head++;
-                    regionSize++;
-
-                    if (myDistances[currentRow][currentCol] < INF) {
-                        myReachable = true;
-                    }
-                    if (opponentDistances[currentRow][currentCol] < INF) {
-                        opponentReachable = true;
-                    }
-
-                    for (int[] direction : DIRECTIONS) {
-                        int nextRow = currentRow + direction[0];
-                        int nextCol = currentCol + direction[1];
-                        if (isPlayable(nextRow, nextCol)
-                            && board[nextRow][nextCol] == EMPTY
-                            && scratch.regionMarks[nextRow][nextCol] != mark) {
-                            scratch.regionMarks[nextRow][nextCol] = mark;
-                            scratch.queueRows[tail] = nextRow;
-                            scratch.queueCols[tail] = nextCol;
-                            tail++;
-                        }
-                    }
-                }
-
-                if (myReachable != opponentReachable) {
-                    int regionValue = Math.max(1, regionSize / 3);
-                    score += myReachable ? regionValue : -regionValue;
-                }
-            }
-        }
-        return score;
-    }
-
     private boolean queenHasDestination(int row, int col) {
         for (int[] direction : DIRECTIONS) {
             int nextRow = row + direction[0];
@@ -513,19 +235,7 @@ public class AmazonsBoardState {
         return false;
     }
 
-    private int frontierWeight(int row, int col) {
-        int blockedNeighbors = 0;
-        for (int[] direction : DIRECTIONS) {
-            int nextRow = row + direction[0];
-            int nextCol = col + direction[1];
-            if (!isPlayable(nextRow, nextCol) || board[nextRow][nextCol] == ARROW) {
-                blockedNeighbors++;
-            }
-        }
-        return blockedNeighbors >= 2 ? blockedNeighbors - 1 : 0;
-    }
-
-    private List<int[]> getQueenPositions(int player) {
+    public List<int[]> getQueenPositions(int player) {
         if (player == BLACK) {
             return blackQueens;
         }
@@ -626,27 +336,7 @@ public class AmazonsBoardState {
         return hashes;
     }
 
-    private static final class EvalScratch {
-        final int[][] distancesA = new int[BOARD_DIMENSION][BOARD_DIMENSION];
-        final int[][] distancesB = new int[BOARD_DIMENSION][BOARD_DIMENSION];
-        final int[] queueRows = new int[BOARD_DIMENSION * BOARD_DIMENSION];
-        final int[] queueCols = new int[BOARD_DIMENSION * BOARD_DIMENSION];
-        final int[][] regionMarks = new int[BOARD_DIMENSION][BOARD_DIMENSION];
-        int regionMark;
-
-        int nextRegionMark() {
-            regionMark++;
-            if (regionMark == Integer.MAX_VALUE) {
-                for (int row = 0; row < BOARD_DIMENSION; row++) {
-                    Arrays.fill(regionMarks[row], 0);
-                }
-                regionMark = 1;
-            }
-            return regionMark;
-        }
-    }
-
-    private static boolean isPlayable(int row, int col) {
+    public static boolean isPlayable(int row, int col) {
         return row >= MIN_INDEX && row <= MAX_INDEX && col >= MIN_INDEX && col <= MAX_INDEX;
     }
 
